@@ -21,7 +21,7 @@ Poll Streamer is a Go application that watches a directory for new images and cr
 
 1. Clone the repository:
    ```
-   git clone https://github.com/aimerib/poll-streamer.git
+   git clone https://github.com/abaddouh/poll-streamer.git
    cd poll-streamer
    ```
 

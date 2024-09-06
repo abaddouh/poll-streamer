@@ -10,9 +10,9 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/aimerib/poll-streamer/internal/server"
-	"github.com/aimerib/poll-streamer/internal/streamer"
-	"github.com/aimerib/poll-streamer/internal/watcher"
+	"github.com/abaddouh/poll-streamer/internal/server"
+	"github.com/abaddouh/poll-streamer/internal/streamer"
+	"github.com/abaddouh/poll-streamer/internal/watcher"
 )
 
 func main() {

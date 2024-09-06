@@ -1,4 +1,4 @@
-module github.com/aimerib/poll-streamer
+module github.com/abaddouh/poll-streamer
 
 go 1.22.4
 
