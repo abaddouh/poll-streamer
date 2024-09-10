@@ -1,5 +1,5 @@
 # Start from a small Alpine Linux image with Go installed
-FROM golang:1.18-alpine AS builder
+FROM golang:1.22-alpine AS builder
 
 # Install git and build dependencies
 RUN apk add --no-cache git build-base

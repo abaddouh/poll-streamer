@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: poll-streamer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: poll-streamer
+  template:
+    metadata:
+      labels:
+        app: poll-streamer
+    spec:
+      containers:
+        - name: streamer
+          image: docker-registry.ops.pe/poll-streamer:streamer-latest
+          env:
+            - name: IMAGE_PATH
+              value: "/images"
+            - name: OUTPUT_PATH
+              value: "/stream"
+          volumeMounts:
+            - name: images
+              mountPath: /images
+            - name: stream
+              mountPath: /stream
+          resources:
+            limits:
+              cpu: "0.5"
+              memory: 1G
+            requests:
+              cpu: "0.05"
+              memory: 100M
+        - name: nginx
+          image: docker-registry.ops.pe/poll-streamer:nginx-latest
+          env:
+            - name: IMAGE_PATH
+              value: "/images"
+            - name: OUTPUT_PATH
+              value: "/stream"
+          resources:
+            limits:
+              cpu: "0.5"
+              memory: 1G
+            requests:
+              cpu: "0.05"
+              memory: 100M
+          volumeMounts:
+            - name: images
+              mountPath: /images
+            - name: stream
+              mountPath: /stream
+      volumes:
+        - name: images
+          emptyDir: {}
+        - name: stream
+          emptyDir: {}
