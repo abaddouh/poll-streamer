@@ -2,6 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: poll-streamer
+  labels:
+    app: poll-streamer
+    deployment: poll-streamer
 spec:
   replicas: 1
   selector:
@@ -11,6 +14,7 @@ spec:
     metadata:
       labels:
         app: poll-streamer
+        deployment: poll-streamer
     spec:
       nodeSelector:
         kubernetes.io/arch: arm64
@@ -19,6 +23,7 @@ spec:
       containers:
         - name: streamer
           image: docker-registry.ops.pe/poll-streamer:streamer-latest
+          imagePullPolicy: Always
           env:
             - name: IMAGE_PATH
               value: "/images"
@@ -38,6 +43,11 @@ spec:
               memory: 100M
         - name: nginx
           image: docker-registry.ops.pe/poll-streamer:nginx-latest
+          imagePullPolicy: Always
+          args:
+            - /usr/sbin/nginx
+            - -g
+            - "daemon off;"
           env:
             - name: IMAGE_PATH
               value: "/images"
@@ -72,7 +82,7 @@ metadata:
     alb.ingress.kubernetes.io/healthy-threshold-count: "3"
     alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "2"
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "5"
-    alb.ingress.kubernetes.io/target-type: instance
+    alb.ingress.kubernetes.io/target-type: ip
 spec:
   ports:
     - name: "80"
