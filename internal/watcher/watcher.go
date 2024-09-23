@@ -3,6 +3,7 @@ package watcher
 import (
 	"context"
 	"log"
+	"path/filepath"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -24,7 +25,7 @@ func New(path string) (*Watcher, error) {
 	}, nil
 }
 
-func (w *Watcher) Start(ctx context.Context, jobs chan<- string) {
+func (w *Watcher) Start(ctx context.Context, jobs chan<- WatcherJob) {
 	defer w.watcher.Close()
 
 	done := make(chan bool)
@@ -41,8 +42,9 @@ func (w *Watcher) Start(ctx context.Context, jobs chan<- string) {
 				}
 				if event.Op&(fsnotify.Create|fsnotify.Write) != 0 {
 					log.Println("File created or modified:", event.Name)
+					streamID := filepath.Base(filepath.Dir(event.Name))
 					select {
-					case jobs <- event.Name:
+					case jobs <- WatcherJob{FilePath: event.Name, StreamID: streamID}:
 					case <-ctx.Done():
 						return
 					}
@@ -62,4 +64,9 @@ func (w *Watcher) Start(ctx context.Context, jobs chan<- string) {
 	}
 
 	<-done
+}
+
+type WatcherJob struct {
+	FilePath string
+	StreamID string
 }

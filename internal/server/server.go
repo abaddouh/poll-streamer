@@ -2,24 +2,31 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Server struct {
 	port       int
 	outputPath string
 	srv        *http.Server
+	streams    map[string]string
+	mu         sync.RWMutex
 }
 
 func New(port int, outputPath string) *Server {
 	return &Server{
 		port:       port,
 		outputPath: outputPath,
+		streams:    make(map[string]string),
 	}
 }
 
@@ -27,6 +34,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/stream/", s.streamHandler)
 	mux.HandleFunc("/shutdown", s.shutdownHandler)
+	mux.HandleFunc("/generate-stream", s.generateStreamHandler)
 
 	s.srv = &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.port),
@@ -34,7 +42,6 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	log.Printf("Starting HTTP server on port %d...\n", s.port)
-	log.Printf("HLS stream should be available at: http://localhost:%d/stream/stream.m3u8\n", s.port)
 
 	go func() {
 		<-ctx.Done()
@@ -83,4 +90,34 @@ func (s *Server) shutdownHandler(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Server shutdown error: %v", err)
 		}
 	}()
+}
+
+func (s *Server) generateStreamHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	streamID := uuid.New().String()
+	streamPath := fmt.Sprintf("/stream/%s/stream.m3u8", streamID)
+	fullStreamPath := filepath.Join(s.outputPath, streamID)
+
+	s.mu.Lock()
+	s.streams[streamID] = fullStreamPath
+	s.mu.Unlock()
+
+	response := map[string]string{
+		"stream_url": fmt.Sprintf("http://localhost:%d%s", s.port, streamPath),
+		"stream_id":  streamID,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func (s *Server) GetStreamPath(streamID string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	path, ok := s.streams[streamID]
+	return path, ok
 }

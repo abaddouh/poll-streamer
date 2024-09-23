@@ -7,55 +7,83 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 type Streamer struct {
-	outputPath string
-	frameRate  int
-	resolution string
-	bitrate    string
+	outputPath     string
+	frameRate      int
+	resolution     string
+	bitrate        string
+	placeholderImg string
+	activeStreams  map[string]*exec.Cmd
+	mu             sync.Mutex
 }
 
-func New(outputPath string, frameRate int, resolution, bitrate string) *Streamer {
+func New(outputPath string, frameRate int, resolution, bitrate, placeholderImg string) *Streamer {
 	return &Streamer{
-		outputPath: outputPath,
-		frameRate:  frameRate,
-		resolution: resolution,
-		bitrate:    bitrate,
+		outputPath:     outputPath,
+		frameRate:      frameRate,
+		resolution:     resolution,
+		bitrate:        bitrate,
+		placeholderImg: placeholderImg,
+		activeStreams:  make(map[string]*exec.Cmd),
 	}
 }
 
-func (s *Streamer) ProcessImage(imagePath string) {
-	os.MkdirAll(s.outputPath, os.ModePerm)
-	s.startFFmpeg(imagePath)
+func (s *Streamer) ProcessImage(imagePath, streamID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if cmd, exists := s.activeStreams[streamID]; exists {
+		log.Printf("Stopping existing stream for %s", streamID)
+		if err := cmd.Process.Kill(); err != nil {
+			log.Printf("Error stopping stream %s: %v", streamID, err)
+		}
+		delete(s.activeStreams, streamID)
+	}
+
+	streamPath := filepath.Join(s.outputPath, streamID)
+	os.MkdirAll(streamPath, os.ModePerm)
+
+	cmd := s.startFFmpeg(imagePath, streamPath)
+	s.activeStreams[streamID] = cmd
 }
 
-func (s *Streamer) startFFmpeg(imagePath string) {
+func (s *Streamer) startFFmpeg(imagePath, streamPath string) *exec.Cmd {
 	cmd := exec.Command("ffmpeg",
-		"-re",          // Read input at native frame rate (important for live streaming)
-		"-f", "image2", // Force input format to image2
-		"-loop", "1", // Loop the input image indefinitely
-		"-i", imagePath, // Input file
-		"-vf", fmt.Sprintf("fps=%d", s.frameRate), // Set the output frame rate
-		"-f", "hls", // Force output format to HTTP Live Streaming (HLS)
-		"-hls_time", "2", // Set the target segment length in seconds
-		"-hls_list_size", "5", // Limit the playlist length (in number of segments)
-		"-hls_flags", "delete_segments+append_list", // Delete old segments and append to the existing list
-		"-codec:v", "libx264", // Use H.264 video codec
-		"-preset", "ultrafast", // Encoding speed preset (fastest, but larger file size)
-		"-tune", "zerolatency", // Tune the encoding for zero latency streaming
-		"-s", s.resolution, // Set the output resolution
-		"-b:v", s.bitrate, // Set the target average bitrate
-		"-maxrate", s.bitrate, // Set the maximum bitrate
-		"-bufsize", s.bitrate, // Set the rate control buffer size
-		"-max_muxing_queue_size", "1024", // Increase muxing queue size to avoid buffering issues
-		filepath.Join(s.outputPath, "stream.m3u8")) // Output HLS playlist
+		"-re",
+		"-f", "image2",
+		"-loop", "1",
+		"-i", imagePath,
+		"-vf", fmt.Sprintf("fps=%d", s.frameRate),
+		"-f", "hls",
+		"-hls_time", "2",
+		"-hls_list_size", "5",
+		"-hls_flags", "delete_segments+append_list",
+		"-codec:v", "libx264",
+		"-preset", "ultrafast",
+		"-tune", "zerolatency",
+		"-s", s.resolution,
+		"-b:v", s.bitrate,
+		"-maxrate", s.bitrate,
+		"-bufsize", s.bitrate,
+		"-max_muxing_queue_size", "1024",
+		filepath.Join(streamPath, "stream.m3u8"))
 
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
-	if err != nil {
-		log.Printf("FFmpeg error: %v\nFFmpeg output:\n%s", err, stderr.String())
-	}
+	go func() {
+		err := cmd.Run()
+		if err != nil {
+			log.Printf("FFmpeg error: %v\nFFmpeg output:\n%s", err, stderr.String())
+		}
+	}()
+
+	return cmd
+}
+
+func (s *Streamer) InitializePlaceholderStream(streamID string) {
+	s.ProcessImage(s.placeholderImg, streamID)
 }

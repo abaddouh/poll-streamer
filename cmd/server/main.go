@@ -23,6 +23,7 @@ func main() {
 	bitrate := flag.String("bitrate", "500k", "Bitrate of the output video")
 	port := flag.Int("port", 8080, "Port to serve the HLS stream")
 	workerCount := flag.Int("workers", runtime.NumCPU(), "Number of worker goroutines")
+	placeholderImg := flag.String("placeholder", "./placeholder.jpg", "Path to the placeholder image")
 
 	flag.Parse()
 
@@ -39,7 +40,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	s := streamer.New(*outputPath, *frameRate, *resolution, *bitrate)
+	s := streamer.New(*outputPath, *frameRate, *resolution, *bitrate, *placeholderImg)
 
 	srv := server.New(*port, *outputPath)
 
@@ -51,10 +52,10 @@ func main() {
 	var wg sync.WaitGroup
 
 	// Start the worker pool
-	jobQueue := make(chan string, 100)
+	jobQueue := make(chan watcher.WatcherJob, 100)
 	for i := 0; i < *workerCount; i++ {
 		wg.Add(1)
-		go worker(ctx, &wg, s, jobQueue)
+		go worker(ctx, &wg, s, srv, jobQueue)
 	}
 
 	// Start the watcher
@@ -92,17 +93,21 @@ func main() {
 	log.Println("Shutdown complete")
 }
 
-func worker(ctx context.Context, wg *sync.WaitGroup, s *streamer.Streamer, jobs <-chan string) {
+func worker(ctx context.Context, wg *sync.WaitGroup, s *streamer.Streamer, srv *server.Server, jobs <-chan watcher.WatcherJob) {
 	defer wg.Done()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case imagePath, ok := <-jobs:
+		case job, ok := <-jobs:
 			if !ok {
 				return
 			}
-			s.ProcessImage(imagePath)
+			if streamPath, exists := srv.GetStreamPath(job.StreamID); exists {
+				s.ProcessImage(job.FilePath, streamPath)
+			} else {
+				log.Printf("Stream %s not found", job.StreamID)
+			}
 		}
 	}
 }

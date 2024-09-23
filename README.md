@@ -1,12 +1,14 @@
 # Poll Streamer
 
-Poll Streamer is a Go application that watches a directory for new images and creates a live HLS video stream from them.
+Poll Streamer is a Go application that watches a directory for new images and creates live HLS video streams from them.
 
 ## Features
 
 - Watch a directory for new images
-- Create an HLS video stream from the images
-- Serve the HLS stream via HTTP
+- Create multiple HLS video streams from the images
+- Serve the HLS streams via HTTP
+- Generate unique stream URLs on demand
+- Use a placeholder image until actual images are added
 - Designed for concurrent processing and Kubernetes deployment
 
 ## Prerequisites
@@ -30,7 +32,12 @@ Poll Streamer is a Go application that watches a directory for new images and cr
    go mod tidy
    ```
 
-3. Set up Python environment for the test script:
+3. Generate the placeholder image:
+   ```
+   go run cmd/placeholder/main.go
+   ```
+
+4. Set up Python environment for the test script:
 
    - On macOS and Linux:
      ```
@@ -46,43 +53,50 @@ Poll Streamer is a Go application that watches a directory for new images and cr
      pip install -r test/requirements.txt
      ```
 
-   Note: After you're done testing, you can deactivate the virtual environment by running:
-   ```
-   deactivate
-   ```
-
 ## Usage
 
-### Local Development
+### Generating Placeholder Image
 
-1. Activate the Python virtual environment:
-   - On macOS and Linux:
-     ```
-     source venv/bin/activate
-     ```
-   - On Windows:
-     ```
-     venv\Scripts\activate
-     ```
+Before running the Poll Streamer, you need to generate a placeholder image. You can use the provided placeholder image generator with the following options:
 
-2. Start the Poll Streamer:
+```
+go run cmd/placeholder/main.go [options]
+```
+
+Options:
+- `-width`: Width of the placeholder image (default: 640)
+- `-height`: Height of the placeholder image (default: 480)
+- `-output`: Output path for the placeholder image (default: "placeholder.jpg")
+- `-text`: Text to display on the placeholder image (default: "Placeholder Image")
+
+Example:
+```
+go run cmd/placeholder/main.go -width 1280 -height 720 -output custom_placeholder.jpg -text "Stream Coming Soon"
+```
+
+This will generate a placeholder image with the specified dimensions and text, saving it to the specified output path.
+
+### Running Poll Streamer
+
+1. Start the Poll Streamer:
    ```
-   go run cmd/server/main.go -path ./test_images -output ./stream -fps 30 -resolution 1280x720 -bitrate 1000k -port 8080 -workers 4
+   go run cmd/server/main.go -path ./images -output ./stream -fps 30 -resolution 1280x720 -bitrate 1000k -port 8080 -workers 4 -placeholder ./custom_placeholder.jpg
    ```
 
-3. In a separate terminal, activate the virtual environment again and run the test script to generate sample images:
+2. Generate a new stream URL:
    ```
-   python test/generate_images.py --output ./test_images --interval 1 --count 30
+   curl -X POST http://localhost:8080/generate-stream
+   ```
+   This will return a JSON response with the stream URL and stream ID.
+
+3. To add images to the stream, place them in the `./images/<stream_id>` directory. For example:
+   ```
+   cp test_image.jpg ./images/<stream_id>/
    ```
 
-4. The HLS stream will be available at `http://localhost:8080/stream/stream.m3u8`. You can view it using a media player that supports HLS streams, such as VLC:
+4. View the stream using a media player that supports HLS, such as VLC:
    ```
-   vlc http://localhost:8080/stream/stream.m3u8
-   ```
-
-5. After testing, deactivate the virtual environment:
-   ```
-   deactivate
+   vlc <stream_url>
    ```
 
 Options for Poll Streamer:
@@ -93,11 +107,7 @@ Options for Poll Streamer:
 - `-bitrate`: Bitrate of the output video (default: "500k")
 - `-port`: Port to serve the HLS stream (default: 8080)
 - `-workers`: Number of worker goroutines (default: number of CPU cores)
-
-Options for test script:
-- `--output`: Output directory for images (default: "./test_images")
-- `--interval`: Interval between image generation in seconds (default: 1.0)
-- `--count`: Number of images to generate (default: 10)
+- `-placeholder`: Path to the placeholder image (default: "./placeholder.jpg")
 
 ### Docker Deployment
 
@@ -110,8 +120,6 @@ Options for test script:
    ```
    docker run -p 8080:8080 -v /path/to/images:/images -v /path/to/output:/stream -e IMAGE_PATH=/images -e OUTPUT_PATH=/stream poll-streamer
    ```
-
-3. Generate test images as described in the Local Development section.
 
 ### Kubernetes Deployment
 
@@ -161,7 +169,7 @@ Options for test script:
 
 3. Generate test images in the appropriate directory on the Kubernetes host.
 
-### Shutting Down the Server
+## Shutting Down the Server
 The server can be shut down gracefully in two ways:
 
 1. By sending a SIGINT or SIGTERM signal (e.g., pressing Ctrl+C in the terminal).
@@ -178,29 +186,41 @@ When the server shuts down, it will:
 
 ## Consuming the Video Stream
 
+After generating a stream URL using the `/generate-stream` endpoint, you can consume the video stream in several ways:
+
 ### Using VLC Media Player
 
 You can view the stream using VLC Media Player:
 
 ```
-vlc http://localhost:8080/stream/stream.m3u8
+vlc <stream_url>
 ```
+
+Replace `<stream_url>` with the URL returned by the `/generate-stream` endpoint.
 
 ### Using FFplay
 
 You can also use FFplay to view the stream:
 
 ```
-ffplay http://localhost:8080/stream/stream.m3u8
+ffplay <stream_url>
 ```
 
 ### Using a Web Browser
 
 To view the stream in a web browser, you can use the provided HTML player:
 
-1. Ensure Poll Streamer is running and generating the HLS stream.
+1. Ensure Poll Streamer is running and you have generated a stream URL.
 
-2. Open the file `test/video_player.html` in a web browser.
+2. Update the `test/video_player.html` file to use the correct stream URL:
+
+   ```javascript
+   var videoSrc = '<stream_url>';
+   ```
+
+   Replace `<stream_url>` with the URL returned by the `/generate-stream` endpoint.
+
+3. Open the file `test/video_player.html` in a web browser.
 
    - If you're using a simple HTTP server to serve this file, make sure it's running on a different port than Poll Streamer.
 
@@ -210,9 +230,7 @@ To view the stream in a web browser, you can use the provided HTML player:
      ```
      Then open `http://localhost:8000/test/video_player.html` in your browser.
 
-3. The video should start playing automatically if everything is set up correctly.
-
-Note: If you're running Poll Streamer on a different machine or port, you'll need to update the `videoSrc` variable in the `video_player.html` file accordingly.
+4. The video should start playing automatically if everything is set up correctly.
 
 ### Embedding in Your Own Web Page
 
@@ -231,7 +249,7 @@ To embed the video stream in your own web page:
 3. Add the following JavaScript to your page:
    ```javascript
    var video = document.getElementById('video');
-   var videoSrc = 'http://localhost:8080/stream/stream.m3u8';
+   var videoSrc = '<stream_url>';
    if (Hls.isSupported()) {
        var hls = new Hls();
        hls.loadSource(videoSrc);
@@ -248,7 +266,7 @@ To embed the video stream in your own web page:
    }
    ```
 
-   Make sure to replace the `videoSrc` with the correct URL if you're not running Poll Streamer locally or on a different port.
+   Replace `<stream_url>` with the URL returned by the `/generate-stream` endpoint.
 
 This code uses hls.js if it's supported by the browser, and falls back to native HLS support for browsers like Safari that support HLS natively.
 
@@ -256,33 +274,22 @@ This code uses hls.js if it's supported by the browser, and falls back to native
 
 To test the Poll Streamer:
 
-1. Activate the Python virtual environment:
-   - On macOS and Linux:
-     ```
-     source venv/bin/activate
-     ```
-   - On Windows:
-     ```
-     venv\Scripts\activate
-     ```
+1. Start the Poll Streamer as described in the Usage section.
 
-2. Start the Poll Streamer as described in the Usage section.
-
-3. In a separate terminal, activate the virtual environment again and run the test script to generate sample images:
+2. Generate a new stream URL:
    ```
-   python test/generate_images.py --output ./test_images --interval 1 --count 30
+   curl -X POST http://localhost:8080/generate-stream
+   ```
+   Note the `stream_id` from the response.
+
+3. Run the test script to generate sample images:
+   ```
+   python test/generate_images.py --output ./images/<stream_id> --interval 1 --count 30
    ```
 
-4. Use a media player that supports HLS (like VLC) to view the stream at `http://localhost:8080/stream/stream.m3u8`.
+4. Use a media player that supports HLS (like VLC) to view the stream at the URL provided in step 2.
 
-5. You should see a video stream of the generated test images, updating every second.
-
-6. After testing, deactivate the virtual environment:
-   ```
-   deactivate
-   ```
-
-If everything is working correctly, you'll see a stream of images with incrementing numbers and timestamps.
+5. You should see a video stream starting with the placeholder image, then updating with the generated test images every second.
 
 ## Troubleshooting
 
