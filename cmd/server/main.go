@@ -56,9 +56,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	s := streamer.New(*outputPath, *frameRate, *resolution, *bitrate, *placeholderImg)
+	// Capture the streamer instance
+	streamerInstance := streamer.New(*outputPath, *frameRate, *resolution, *bitrate, *placeholderImg)
 
-	srv := server.New(*port, *outputPath, *placeholderImg)
+	srv := server.New(*port, *outputPath, *placeholderImg, streamerInstance)
 
 	// Create a context that we can cancel
 	ctx, cancel := context.WithCancel(context.Background())
@@ -71,7 +72,7 @@ func main() {
 	jobQueue := make(chan watcher.WatcherJob, 100)
 	for i := 0; i < *workerCount; i++ {
 		wg.Add(1)
-		go worker(ctx, &wg, s, srv, jobQueue)
+		go worker(ctx, &wg, streamerInstance, srv, jobQueue)
 	}
 
 	// Start the watcher
@@ -97,6 +98,9 @@ func main() {
 	<-c
 	log.Println("Shutting down...")
 	cancel()
+
+	// Shutdown streamer processes
+	streamerInstance.Shutdown()
 
 	// Wait for all goroutines to finish
 	wg.Wait()

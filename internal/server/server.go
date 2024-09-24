@@ -18,6 +18,7 @@ import (
 
 	"strconv"
 
+	"github.com/abaddouh/poll-streamer/internal/streamer"
 	"github.com/google/uuid"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
@@ -31,15 +32,17 @@ type Server struct {
 	srv            *http.Server
 	streams        map[string]string
 	mu             sync.RWMutex
+	streamer       *streamer.Streamer
 }
 
-// New initializes a new Server instance.
-func New(port int, outputPath, placeholderImg string) *Server {
+// New initializes a new Server instance with a Streamer
+func New(port int, outputPath, placeholderImg string, streamerInstance *streamer.Streamer) *Server {
 	return &Server{
 		port:           port,
 		outputPath:     outputPath,
 		placeholderImg: placeholderImg,
 		streams:        make(map[string]string),
+		streamer:       streamerInstance, // Initialize the Streamer field
 	}
 }
 
@@ -254,6 +257,9 @@ func (s *Server) generateStreamHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.streams[streamID] = fullStreamPath
 	s.mu.Unlock()
+
+	// Initialize the placeholder stream using the injected Streamer instance
+	s.streamer.ProcessImage(s.placeholderImg, streamID)
 
 	response := map[string]string{
 		"stream_url": fmt.Sprintf("http://localhost:%d%s", s.port, streamPath),
