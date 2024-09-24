@@ -9,6 +9,7 @@ Poll Streamer is a Go application that watches a directory for new images and cr
 - Serve the HLS streams via HTTP
 - Generate unique stream URLs on demand
 - Use a placeholder image until actual images are added
+- **API Endpoints for Managing Streams and Placeholder Images**
 - Designed for concurrent processing and Kubernetes deployment
 
 ## Prerequisites
@@ -22,32 +23,32 @@ Poll Streamer is a Go application that watches a directory for new images and cr
 ## Installation
 
 1. Clone the repository:
-   ```
+   ```bash
    git clone https://github.com/abaddouh/poll-streamer.git
    cd poll-streamer
    ```
 
 2. Install Go dependencies:
-   ```
+   ```bash
    go mod tidy
    ```
 
 3. Generate the placeholder image:
-   ```
+   ```bash
    go run cmd/placeholder/main.go
    ```
 
 4. Set up Python environment for the test script:
 
    - On macOS and Linux:
-     ```
+     ```bash
      python3 -m venv venv
      source venv/bin/activate
      pip install -r test/requirements.txt
      ```
 
    - On Windows:
-     ```
+     ```bash
      python -m venv venv
      venv\Scripts\activate
      pip install -r test/requirements.txt
@@ -59,7 +60,7 @@ Poll Streamer is a Go application that watches a directory for new images and cr
 
 Before running the Poll Streamer, you need to generate a placeholder image. You can use the provided placeholder image generator with the following options:
 
-```
+```bash
 go run cmd/placeholder/main.go [options]
 ```
 
@@ -70,7 +71,7 @@ Options:
 - `-text`: Text to display on the placeholder image (default: "Placeholder Image")
 
 Example:
-```
+```bash
 go run cmd/placeholder/main.go -width 1280 -height 720 -output custom_placeholder.jpg -text "Stream Coming Soon"
 ```
 
@@ -79,27 +80,102 @@ This will generate a placeholder image with the specified dimensions and text, s
 ### Running Poll Streamer
 
 1. Start the Poll Streamer:
-   ```
+   ```bash
    go run cmd/server/main.go -path ./images -output ./stream -fps 30 -resolution 1280x720 -bitrate 1000k -port 8080 -workers 4 -placeholder ./custom_placeholder.jpg
    ```
 
 2. Generate a new stream URL:
-   ```
+   ```bash
    curl -X POST http://localhost:8080/generate-stream
    ```
    This will return a JSON response with the stream URL and stream ID.
 
 3. To add images to the stream, place them in the `./images/<stream_id>` directory. For example:
-   ```
+   ```bash
    cp test_image.jpg ./images/<stream_id>/
    ```
 
 4. View the stream using a media player that supports HLS, such as VLC:
-   ```
+   ```bash
    vlc <stream_url>
    ```
 
-Options for Poll Streamer:
+#### API Endpoints
+
+Poll Streamer provides several API endpoints to interact with the service:
+
+- **GET `/heartbeat`**
+
+  Check if the server is running.
+
+  **Example:**
+  ```bash
+  curl http://localhost:8080/heartbeat
+  ```
+
+  **Response:**
+  ```
+  OK
+  ```
+
+- **POST `/generate-stream`**
+
+  Generate a new stream.
+
+  **Example:**
+  ```bash
+  curl -X POST http://localhost:8080/generate-stream
+  ```
+
+  **Response:**
+  ```json
+  {
+    "stream_id": "unique-stream-id",
+    "stream_url": "http://localhost:8080/stream/unique-stream-id/stream.m3u8"
+  }
+  ```
+
+- **GET `/stream/{stream_id}/stream.m3u8`**
+
+  Access a specific stream.
+
+  **Example:**
+  ```bash
+  curl http://localhost:8080/stream/unique-stream-id/stream.m3u8
+  ```
+
+- **GET `/placeholder`**
+
+  Retrieve the current placeholder image.
+
+  **Example:**
+  ```bash
+  curl http://localhost:8080/placeholder --output placeholder.jpg
+  ```
+
+- **POST `/placeholder`**
+
+  Generate a new placeholder image.
+
+  **Example with JSON body:**
+  ```bash
+  curl -X POST http://localhost:8080/placeholder \
+       -H "Content-Type: application/json" \
+       -d '{"width":1280, "height":720, "text":"New Placeholder"}'
+  ```
+
+  **Example with Query Parameters:**
+  ```bash
+  curl -X POST "http://localhost:8080/placeholder?width=1280&height=720&text=New+Placeholder"
+  ```
+
+  **Response:**
+  ```
+  Placeholder image created successfully
+  ```
+
+### Options for Poll Streamer
+
 - `-path`: Path to the directory containing images (required)
 - `-output`: Path to output the HLS stream files (default: "./stream")
 - `-fps`: Frames per second for the output video (default: 30)
@@ -112,12 +188,12 @@ Options for Poll Streamer:
 ### Docker Deployment
 
 1. Build the Docker image:
-   ```
+   ```bash
    docker build -t poll-streamer .
    ```
 
 2. Run the Docker container:
-   ```
+   ```bash
    docker run -p 8080:8080 -v /path/to/images:/images -v /path/to/output:/stream -e IMAGE_PATH=/images -e OUTPUT_PATH=/stream poll-streamer
    ```
 
@@ -163,19 +239,20 @@ Options for Poll Streamer:
    ```
 
 2. Apply the deployment:
-   ```
+   ```bash
    kubectl apply -f deployment.yaml
    ```
 
 3. Generate test images in the appropriate directory on the Kubernetes host.
 
 ## Shutting Down the Server
+
 The server can be shut down gracefully in two ways:
 
 1. By sending a SIGINT or SIGTERM signal (e.g., pressing Ctrl+C in the terminal).
 
 2. By sending a POST request to the `/shutdown` endpoint:
-   ```
+   ```bash
    curl -X POST http://localhost:8080/shutdown
    ```
 
@@ -192,7 +269,7 @@ After generating a stream URL using the `/generate-stream` endpoint, you can con
 
 You can view the stream using VLC Media Player:
 
-```
+```bash
 vlc <stream_url>
 ```
 
@@ -202,7 +279,7 @@ Replace `<stream_url>` with the URL returned by the `/generate-stream` endpoint.
 
 You can also use FFplay to view the stream:
 
-```
+```bash
 ffplay <stream_url>
 ```
 
@@ -225,7 +302,7 @@ To view the stream in a web browser, you can use the provided HTML player:
    - If you're using a simple HTTP server to serve this file, make sure it's running on a different port than Poll Streamer.
 
    - For example, you can use Python's built-in HTTP server:
-     ```
+     ```bash
      python -m http.server 8000
      ```
      Then open `http://localhost:8000/test/video_player.html` in your browser.
@@ -268,7 +345,7 @@ To embed the video stream in your own web page:
 
    Replace `<stream_url>` with the URL returned by the `/generate-stream` endpoint.
 
-This code uses hls.js if it's supported by the browser, and falls back to native HLS support for browsers like Safari that support HLS natively.
+   This code uses hls.js if it's supported by the browser, and falls back to native HLS support for browsers like Safari that support HLS natively.
 
 ## Testing
 
@@ -277,14 +354,20 @@ To test the Poll Streamer:
 1. Start the Poll Streamer as described in the Usage section.
 
 2. Generate a new stream URL:
-   ```
+   ```bash
    curl -X POST http://localhost:8080/generate-stream
    ```
    Note the `stream_id` from the response.
 
 3. Run the test script to generate sample images:
-   ```
+   ```bash
    python test/generate_images.py --output ./images/<stream_id> --interval 1 --count 30
+   ```
+   **Note:** The `--count` parameter is now optional. If not provided, the script will run indefinitely until interrupted.
+
+   Example without `--count`:
+   ```bash
+   python test/generate_images.py --output ./images/<stream_id> --interval 1
    ```
 
 4. Use a media player that supports HLS (like VLC) to view the stream at the URL provided in step 2.
@@ -351,7 +434,7 @@ If you encounter issues with the stream not being accessible, follow these steps
 If you encounter FFmpeg errors, such as "exit status 234", follow these steps:
 
 1. Check FFmpeg installation:
-   ```
+   ```bash
    ffmpeg -version
    ```
    Ensure you have a recent version of FFmpeg installed.
@@ -366,7 +449,7 @@ If you encounter FFmpeg errors, such as "exit status 234", follow these steps:
 
 4. Run FFmpeg manually:
    Try running the FFmpeg command directly in your terminal. Replace `<input_image>` and `<output_path>` with your actual paths:
-   ```
+   ```bash
    ffmpeg -f image2 -loop 1 -i <input_image> -vf fps=30 -f hls -hls_time 2 -hls_list_size 5 -hls_flags delete_segments+append_list -codec:v libx264 -preset ultrafast -tune zerolatency -s 640x480 -b:v 500k -maxrate 500k -bufsize 500k -re -max_muxing_queue_size 1024 <output_path>/stream.m3u8
    ```
    This can help identify specific issues with the FFmpeg command.
@@ -377,7 +460,7 @@ If you encounter FFmpeg errors, such as "exit status 234", follow these steps:
 
 6. Libx264 codec:
    - Verify that your FFmpeg build includes the libx264 codec:
-     ```
+     ```bash
      ffmpeg -encoders | grep libx264
      ```
    - If it's not available, you may need to rebuild FFmpeg with libx264 support or use a different codec.
