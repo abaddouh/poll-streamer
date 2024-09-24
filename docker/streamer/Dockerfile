@@ -32,6 +32,6 @@ WORKDIR /root/
 # Copy the pre-built binary file from the previous stage
 COPY --from=builder /app/poll-streamer .
 COPY --from=builder /app/poll-streamer-placeholder .
-RUN 'poll-streamer-placeholder -width 1280 -height 720 -output custom_placeholder.jpg -text "Stream Coming Soon"'
+RUN ./poll-streamer-placeholder -width 1280 -height 720 -output custom_placeholder.jpg -text "Stream Coming Soon"
 # Command to run the executable
-CMD ["./poll-streamer -placeholder ./custom_placeholder.jpg"]
+CMD ["./poll-streamer -path /root -placeholder /root/custom_placeholder.jpg"]
