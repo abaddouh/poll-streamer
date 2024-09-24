@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"syscall"
@@ -27,12 +29,26 @@ func main() {
 
 	flag.Parse()
 
-	if *imagePath == "" {
-		log.Fatal("Please provide the path to the image directory using the -path flag or IMAGE_PATH environment variable")
+	// Validate and create paths if necessary
+	if err := ensureDir(*imagePath); err != nil {
+		log.Fatalf("Error with image path: %v", err)
 	}
 
 	if *outputPath == "" {
 		*outputPath = "./stream"
+	}
+
+	if err := ensureDir(*outputPath); err != nil {
+		log.Fatalf("Error with output path: %v", err)
+	}
+
+	placeholderDir := filepath.Dir(*placeholderImg)
+	if err := ensureDir(placeholderDir); err != nil {
+		log.Fatalf("Error with placeholder image directory: %v", err)
+	}
+
+	if *imagePath == "" {
+		log.Fatal("Please provide the path to the image directory using the -path flag or IMAGE_PATH environment variable")
 	}
 
 	w, err := watcher.New(*imagePath)
@@ -42,7 +58,7 @@ func main() {
 
 	s := streamer.New(*outputPath, *frameRate, *resolution, *bitrate, *placeholderImg)
 
-	srv := server.New(*port, *outputPath)
+	srv := server.New(*port, *outputPath, *placeholderImg)
 
 	// Create a context that we can cancel
 	ctx, cancel := context.WithCancel(context.Background())
@@ -91,6 +107,25 @@ func main() {
 	}
 
 	log.Println("Shutdown complete")
+}
+
+// ensureDir checks if a directory exists, and creates it if it doesn't.
+func ensureDir(path string) error {
+	if path == "" {
+		return fmt.Errorf("path is empty")
+	}
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		log.Printf("Directory does not exist. Creating: %s", path)
+		return os.MkdirAll(path, 0755)
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("path exists but is not a directory: %s", path)
+	}
+	return nil
 }
 
 func worker(ctx context.Context, wg *sync.WaitGroup, s *streamer.Streamer, srv *server.Server, jobs <-chan watcher.WatcherJob) {
