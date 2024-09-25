@@ -33,7 +33,8 @@
 
     <script>
         var video = document.getElementById('video');
-        var videoSrc = 'http://localhost:8080/stream/stream.m3u8';
+        <!-- this line gets automatically changed by the demo.sh script -->
+        var videoSrc = 'http://localhost:8080/stream/6da94ee1-710e-42b9-afb6-4ff0b97b3457/stream.m3u8';
         if (Hls.isSupported()) {
             var hls = new Hls();
             hls.loadSource(videoSrc);

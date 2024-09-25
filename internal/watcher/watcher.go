@@ -3,7 +3,9 @@ package watcher
 import (
 	"context"
 	"log"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -41,6 +43,21 @@ func (w *Watcher) Start(ctx context.Context, jobs chan<- WatcherJob) {
 					return
 				}
 				if event.Op&(fsnotify.Create|fsnotify.Write) != 0 {
+					fi, err := os.Stat(event.Name)
+					if err != nil {
+						log.Printf("Error stating file: %v", err)
+						continue
+					}
+					if fi.IsDir() {
+						log.Printf("Directory event detected, ignoring: %s", event.Name)
+						continue // Ignore directory events
+					}
+
+					if !isImageFile(event.Name) {
+						log.Printf("Non-image file detected, ignoring: %s", event.Name)
+						continue // Ignore non-image files
+					}
+
 					log.Println("File created or modified:", event.Name)
 					streamID := filepath.Base(filepath.Dir(event.Name))
 					select {
@@ -64,6 +81,17 @@ func (w *Watcher) Start(ctx context.Context, jobs chan<- WatcherJob) {
 	}
 
 	<-done
+}
+
+// isImageFile checks if the file has a valid image extension
+func isImageFile(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".bmp", ".gif":
+		return true
+	default:
+		return false
+	}
 }
 
 type WatcherJob struct {

@@ -142,8 +142,8 @@ func worker(ctx context.Context, wg *sync.WaitGroup, s *streamer.Streamer, srv *
 			if !ok {
 				return
 			}
-			if streamPath, exists := srv.GetStreamPath(job.StreamID); exists {
-				s.ProcessImage(job.FilePath, streamPath)
+			if _, exists := srv.GetStreamPath(job.StreamID); exists {
+				s.ProcessImage(job.FilePath, job.StreamID) // Pass streamID instead of streamPath
 			} else {
 				log.Printf("Stream %s not found", job.StreamID)
 			}

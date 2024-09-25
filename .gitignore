@@ -22,6 +22,8 @@ test_images/
 
 # Output directory
 stream/
+images/
+placeholder.jpg
 
 # Go workspace file
 go.work

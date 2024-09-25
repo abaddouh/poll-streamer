@@ -261,6 +261,8 @@ func (s *Server) generateStreamHandler(w http.ResponseWriter, r *http.Request) {
 	// Initialize the placeholder stream using the injected Streamer instance
 	s.streamer.ProcessImage(s.placeholderImg, streamID)
 
+	log.Printf("Generated new stream with ID: %s at Path: %s", streamID, fullStreamPath)
+
 	response := map[string]string{
 		"stream_url": fmt.Sprintf("http://localhost:%d%s", s.port, streamPath),
 		"stream_id":  streamID,
@@ -282,6 +284,15 @@ func (s *Server) streamHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+
+	switch filepath.Ext(filePath) {
+	case ".m3u8":
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	case ".ts":
+		w.Header().Set("Content-Type", "video/MP2T")
+	}
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	http.ServeFile(w, r, filePath)
 }

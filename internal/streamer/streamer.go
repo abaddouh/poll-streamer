@@ -18,8 +18,13 @@ type Streamer struct {
 	resolution     string
 	bitrate        string
 	placeholderImg string
-	activeStreams  map[string]*exec.Cmd
+	activeStreams  map[string]*StreamProcess
 	mu             sync.Mutex
+}
+
+type StreamProcess struct {
+	cmd      *exec.Cmd
+	fifoFile *os.File
 }
 
 func New(outputPath string, frameRate int, resolution, bitrate, placeholderImg string) *Streamer {
@@ -29,7 +34,7 @@ func New(outputPath string, frameRate int, resolution, bitrate, placeholderImg s
 		resolution:     resolution,
 		bitrate:        bitrate,
 		placeholderImg: placeholderImg,
-		activeStreams:  make(map[string]*exec.Cmd),
+		activeStreams:  make(map[string]*StreamProcess),
 	}
 }
 
@@ -43,12 +48,15 @@ func (s *Streamer) createFIFO(streamPath string) (string, error) {
 	return fifoPath, nil
 }
 
-func (s *Streamer) startPersistentFFmpeg(fifoPath, streamPath string) (*exec.Cmd, error) {
+func (s *Streamer) startPersistentFFmpeg(fifoPath, streamPath string) (*exec.Cmd, *os.File, error) {
 	cmd := exec.Command("ffmpeg",
 		"-y",
+		"-re",
 		"-f", "image2pipe",
 		"-i", fifoPath,
 		"-vf", fmt.Sprintf("fps=%d", s.frameRate),
+		"-g", fmt.Sprintf("%d", s.frameRate*2), // Keyframe every 2 seconds
+		"-r", fmt.Sprintf("%d", s.frameRate), // Output fps
 		"-f", "hls",
 		"-hls_time", "2",
 		"-hls_list_size", "5",
@@ -68,7 +76,13 @@ func (s *Streamer) startPersistentFFmpeg(fifoPath, streamPath string) (*exec.Cmd
 	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start FFmpeg: %v\nOutput: %s", err, stderr.String())
+		return nil, nil, fmt.Errorf("failed to start FFmpeg: %v\nOutput: %s", err, stderr.String())
+	}
+
+	fifoFile, err := os.OpenFile(fifoPath, os.O_WRONLY, os.ModeNamedPipe)
+	if err != nil {
+		cmd.Process.Kill()
+		return nil, nil, fmt.Errorf("failed to open FIFO for writing: %v", err)
 	}
 
 	// Monitor FFmpeg process
@@ -84,7 +98,23 @@ func (s *Streamer) startPersistentFFmpeg(fifoPath, streamPath string) (*exec.Cmd
 		s.mu.Unlock()
 	}()
 
-	return cmd, nil
+	return cmd, fifoFile, nil
+}
+
+func (s *Streamer) writeImageToFIFO(fifoFile *os.File, imagePath, streamID string) error {
+	imgFile, err := os.Open(imagePath)
+	if err != nil {
+		return fmt.Errorf("error opening image file %s: %v", imagePath, err)
+	}
+	defer imgFile.Close()
+
+	log.Printf("Writing image %s to FIFO", imagePath)
+	_, err = io.Copy(fifoFile, imgFile)
+	if err != nil {
+		return fmt.Errorf("error writing image to FIFO: %v", err)
+	}
+	log.Printf("Successfully wrote image to FIFO for stream %s", streamID)
+	return nil
 }
 
 func (s *Streamer) ProcessImage(imagePath, streamID string) {
@@ -92,51 +122,78 @@ func (s *Streamer) ProcessImage(imagePath, streamID string) {
 	defer s.mu.Unlock()
 
 	streamPath := filepath.Join(s.outputPath, streamID)
-	os.MkdirAll(streamPath, os.ModePerm)
+	log.Printf("Processing image: %s for Stream ID: %s at Path: %s", imagePath, streamID, streamPath)
+
+	if _, err := os.Stat(imagePath); os.IsNotExist(err) {
+		log.Printf("Image file does not exist: %s", imagePath)
+		return
+	}
+
+	if err := os.MkdirAll(streamPath, os.ModePerm); err != nil {
+		log.Printf("Error creating stream directory: %v", err)
+		return
+	}
 
 	fifoPath, err := s.createFIFO(streamPath)
 	if err != nil {
-		log.Printf("Error creating FIFO: %v", err)
+		log.Printf("Error creating FIFO at %s: %v", fifoPath, err)
 		return
 	}
+	log.Printf("FIFO created at: %s", fifoPath)
 
 	// Start FFmpeg if not already running
 	if _, exists := s.activeStreams[streamPath]; !exists {
-		cmd, err := s.startPersistentFFmpeg(fifoPath, streamPath)
+		cmd, fifoFile, err := s.startPersistentFFmpeg(fifoPath, streamPath)
 		if err != nil {
-			log.Printf("Error starting FFmpeg: %v", err)
+			log.Printf("Error starting FFmpeg for %s: %v", streamPath, err)
 			return
 		}
-		s.activeStreams[streamPath] = cmd
+		s.activeStreams[streamPath] = &StreamProcess{
+			cmd:      cmd,
+			fifoFile: fifoFile,
+		}
+		log.Printf("Started FFmpeg for stream %s with PID %d", streamPath, cmd.Process.Pid)
 	}
 
 	// Write the new image to the FIFO
-	fifoFile, err := os.OpenFile(fifoPath, os.O_WRONLY, os.ModeNamedPipe)
-	if err != nil {
-		log.Printf("Error opening FIFO for writing: %v", err)
-		return
-	}
-	defer fifoFile.Close()
-
-	imgFile, err := os.Open(imagePath)
-	if err != nil {
-		log.Printf("Error opening image file: %v", err)
-		return
-	}
-	defer imgFile.Close()
-
-	if _, err := io.Copy(fifoFile, imgFile); err != nil {
+	streamProcess := s.activeStreams[streamPath]
+	if err := s.writeImageToFIFO(streamProcess.fifoFile, imagePath, streamID); err != nil {
 		log.Printf("Error writing image to FIFO: %v", err)
 	}
+	// fifoFile, err := os.OpenFile(fifoPath, os.O_WRONLY, os.ModeNamedPipe)
+	// if err != nil {
+	// 	log.Printf("Error opening FIFO for writing: %v", err)
+	// 	return
+	// }
+	// defer fifoFile.Close()
+
+	// imgFile, err := os.Open(imagePath)
+	// if err != nil {
+	// 	log.Printf("Error opening image file %s: %v", imagePath, err)
+	// 	return
+	// }
+	// defer imgFile.Close()
+
+	// log.Printf("Writing image %s to FIFO %s", imagePath, fifoPath)
+	// if _, err := io.Copy(fifoFile, imgFile); err != nil {
+	// 	log.Printf("Error writing image to FIFO: %v", err)
+	// } else {
+	// 	log.Printf("Successfully wrote image to FIFO for stream %s", streamID)
+	// }
 }
 
 func (s *Streamer) Shutdown() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for streamPath, cmd := range s.activeStreams {
-		if err := cmd.Process.Signal(os.Interrupt); err != nil {
+	for streamPath, process := range s.activeStreams {
+		log.Printf("Shutting down stream: %s", streamPath)
+		// Close the FIFO file to signal FFmpeg to terminate
+		if err := process.fifoFile.Close(); err != nil {
+			log.Printf("Error closing FIFO for %s: %v", streamPath, err)
+		}
+		// Send interrupt to FFmpeg
+		if err := process.cmd.Process.Signal(os.Interrupt); err != nil {
 			log.Printf("Error sending interrupt to FFmpeg for %s: %v", streamPath, err)
 		}
-		// Optionally wait or implement force kill after a timeout
 	}
 }
