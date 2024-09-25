@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: poll-streamer
+  labels:
+    app: poll-streamer
+    deployment: poll-streamer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: poll-streamer
+  template:
+    metadata:
+      labels:
+        app: poll-streamer
+        deployment: poll-streamer
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      imagePullSecrets:
+        - name: docker-registry-ops-pe
+      containers:
+        - name: streamer
+          image: docker-registry.ops.pe/poll-streamer:streamer-latest
+          imagePullPolicy: Always
+          env:
+            - name: IMAGE_PATH
+              value: "/images"
+            - name: OUTPUT_PATH
+              value: "/stream"
+          volumeMounts:
+            - name: images
+              mountPath: /images
+            - name: stream
+              mountPath: /stream
+          resources:
+            limits:
+              cpu: "0.5"
+              memory: 1G
+            requests:
+              cpu: "0.05"
+              memory: 100M
+        - name: nginx
+          image: docker-registry.ops.pe/poll-streamer:nginx-latest
+          imagePullPolicy: Always
+          args:
+            - /usr/sbin/nginx
+            - -g
+            - "daemon off;"
+          env:
+            - name: IMAGE_PATH
+              value: "/images"
+            - name: OUTPUT_PATH
+              value: "/stream"
+          resources:
+            limits:
+              cpu: "0.5"
+              memory: 1G
+            requests:
+              cpu: "0.05"
+              memory: 100M
+          volumeMounts:
+            - name: images
+              mountPath: /images
+            - name: stream
+              mountPath: /stream
+      volumes:
+        - name: images
+          emptyDir: {}
+        - name: stream
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: poll-streamer-poll-streamer
+  labels:
+    app: poll-streamer
+  annotations:
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthy-threshold-count: "3"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "2"
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "5"
+    alb.ingress.kubernetes.io/target-type: ip
+spec:
+  ports:
+    - name: "80"
+      port: 80
+      targetPort: 80
+      protocol: TCP
+  type: NodePort
+  selector:
+    app: poll-streamer
+    deployment: poll-streamer
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: poll-streamer
+  annotations:
+    alb.ingress.kubernetes.io/load-balancer-name: staging-poll-streamer
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: >-
+      arn:aws:acm:us-west-2:847672749925:certificate/47478568-1f02-4a21-9a94-21ad11f0265d,arn:aws:acm:us-west-2:847672749925:certificate/ba0b463e-b7c7-4bb7-8f76-2d2e0a9977a0
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-Res-2021-06
+    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=300
+    alb.ingress.kubernetes.io/security-groups: staging-k8s-ops-pe-alb
+    alb.ingress.kubernetes.io/tags: env=staging
+    alb.ingress.kubernetes.io/load-balancer-attributes: access_logs.s3.enabled=false
+  labels: {}
+spec:
+  ingressClassName: alb
+  rules:
+    - host: staging-poll-streamer.ops.pe
+      http:
+        paths:
+          - path: /*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: poll-streamer-poll-streamer
+                port:
+                  number: 80
