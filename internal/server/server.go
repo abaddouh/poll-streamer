@@ -38,9 +38,10 @@ type Server struct {
 // New initializes a new Server instance with a Streamer
 func New(port int, streamerInstance *streamer.Streamer) *Server {
 	return &Server{
-		port:     port,
-		streams:  make(map[string]string),
-		streamer: streamerInstance, // Initialize the Streamer field
+		port:           port,
+		placeholderImg: "placeholder.jpg",
+		streams:        make(map[string]string),
+		streamer:       streamerInstance, // Initialize the Streamer field
 	}
 }
 
@@ -257,7 +258,34 @@ func (s *Server) generateStreamHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	// Initialize the placeholder stream using the injected Streamer instance
-	s.streamer.ProcessImage(s.placeholderImg, streamID)
+	go func() {
+		s.streamer.ProcessImage(s.placeholderImg, streamID)
+	}()
+
+	// Implement a wait loop with a timeout to check for stream.m3u8
+	// timeout := time.After(20 * time.Second)
+	// ticker := time.Tick(100 * time.Millisecond)
+	// streamFilePath := filepath.Join(fullStreamPath, "stream.m3u8")
+	// streamInitialized := false
+
+	// 	for {
+	// 		select {
+	// 		case <-timeout:
+	// 			log.Printf("Timeout: stream.m3u8 not found for StreamID %s after waiting", streamID)
+	// 			http.Error(w, "Failed to initialize stream", http.StatusInternalServerError)
+	// 			return
+	// 		case <-ticker:
+	// 			if _, err := os.Stat(streamFilePath); err == nil {
+	// 				log.Printf("stream.m3u8 successfully created for StreamID %s", streamID)
+	// 				streamInitialized = true
+	// 				goto OuterLoop
+	// 			}
+	// 		}
+	// 		if streamInitialized {
+	// 			break
+	// 		}
+	// 	}
+	// OuterLoop:
 
 	log.Printf("Generated new stream with ID: %s at Path: %s", streamID, fullStreamPath)
 
@@ -274,7 +302,7 @@ func (s *Server) generateStreamHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) streamHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Received request for: %s", r.URL.Path)
 
-	filePath := filepath.Join(s.outputPath, r.URL.Path[len("/stream/"):])
+	filePath := filepath.Join("stream", s.outputPath, r.URL.Path[len("/stream/"):])
 	log.Printf("Attempting to serve file: %s", filePath)
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {

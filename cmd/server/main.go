@@ -137,15 +137,19 @@ func worker(ctx context.Context, wg *sync.WaitGroup, s *streamer.Streamer, srv *
 	for {
 		select {
 		case <-ctx.Done():
+			log.Println("Worker received shutdown signal")
 			return
 		case job, ok := <-jobs:
 			if !ok {
+				log.Println("Jobs channel closed, worker exiting")
 				return
 			}
+			log.Printf("Worker received job: StreamID=%s, FilePath=%s", job.StreamID, job.FilePath)
 			if _, exists := srv.GetStreamPath(job.StreamID); exists {
-				s.ProcessImage(job.FilePath, job.StreamID) // Pass streamID instead of streamPath
+				log.Printf("StreamID %s exists. Processing image.", job.StreamID)
+				s.ProcessImage(job.FilePath, job.StreamID)
 			} else {
-				log.Printf("Stream %s not found", job.StreamID)
+				log.Printf("Stream %s not found. Skipping job for FilePath=%s", job.StreamID, job.FilePath)
 			}
 		}
 	}
