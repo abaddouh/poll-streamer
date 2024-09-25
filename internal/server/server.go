@@ -36,13 +36,11 @@ type Server struct {
 }
 
 // New initializes a new Server instance with a Streamer
-func New(port int, outputPath, placeholderImg string, streamerInstance *streamer.Streamer) *Server {
+func New(port int, streamerInstance *streamer.Streamer) *Server {
 	return &Server{
-		port:           port,
-		outputPath:     outputPath,
-		placeholderImg: placeholderImg,
-		streams:        make(map[string]string),
-		streamer:       streamerInstance, // Initialize the Streamer field
+		port:     port,
+		streams:  make(map[string]string),
+		streamer: streamerInstance, // Initialize the Streamer field
 	}
 }
 

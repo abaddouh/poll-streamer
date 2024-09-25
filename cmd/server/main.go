@@ -59,7 +59,7 @@ func main() {
 	// Capture the streamer instance
 	streamerInstance := streamer.New(*outputPath, *frameRate, *resolution, *bitrate, *placeholderImg)
 
-	srv := server.New(*port, *outputPath, *placeholderImg, streamerInstance)
+	srv := server.New(*port, streamerInstance)
 
 	// Create a context that we can cancel
 	ctx, cancel := context.WithCancel(context.Background())

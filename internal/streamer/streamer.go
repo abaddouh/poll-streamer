@@ -118,6 +118,7 @@ func (s *Streamer) writeImageToFIFO(fifoFile *os.File, imagePath, streamID strin
 }
 
 func (s *Streamer) ProcessImage(imagePath, streamID string) {
+	log.Printf("active streams: %v", s.activeStreams)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
