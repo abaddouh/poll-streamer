@@ -476,7 +476,3 @@ If you're still experiencing issues after trying these steps, please open an iss
 - FFmpeg version (`ffmpeg -version`)
 - The exact error message and FFmpeg output from the Poll Streamer logs
 - The contents of one of your input image files (you can use `file <image_path>` command)
-
-## License
-
-[MIT License](LICENSE)
